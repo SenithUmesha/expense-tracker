@@ -1,16 +1,25 @@
 import TotalAmount from "./TotalAmount";
 
-import "../assets/Header.css";
-
-const Header = (props) => {
+const Header = ({ total, count, year }) => {
   return (
-    <div className="header-containter">
-      <h1 className="site-name">Expense Tracker</h1>
-      <div className="header-right">
-        <h2 className="total-text">Total:</h2>
-        <TotalAmount items={props.items} />
+    <header className="hero">
+      <div>
+        <p className="eyebrow">tiny money log</p>
+        <h1>Expense Tracker</h1>
+        <p className="hero-copy">
+          A small React side project for logging everyday spending without an
+          account, backend, or spreadsheet.
+        </p>
       </div>
-    </div>
+
+      <div className="hero-total-card" aria-label={`${year} spending total`}>
+        <span>{year} total</span>
+        <TotalAmount value={total} />
+        <small>
+          {count} {count === 1 ? "transaction" : "transactions"}
+        </small>
+      </div>
+    </header>
   );
 };
 
