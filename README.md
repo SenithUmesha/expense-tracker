@@ -2,9 +2,9 @@
 
 > a tiny browser-first money log. no account, no backend, no spreadsheet pretending to be an app.
 
-This started as a 2022 React practice project and eventually became the kind of small side quest I actually like keeping around: **add an expense, see where the money went, close the tab.**
+This started as a 2022 React practice project and turned into the kind of small side quest I actually like keeping around: **add an expense, see where the money went, close the tab.**
 
-The current version keeps everything in the browser, groups spending by year, turns each year into a monthly chart, and gives you a compact snapshot of the total, average and largest expense.
+The current version keeps everything in the browser, groups spending by year, turns each year into a monthly chart, shows a compact spending snapshot, and lets you export/import a portable JSON backup without sending anything to a server.
 
 `React 18` · `localStorage` · `Material UI` · `Create React App`
 
@@ -12,12 +12,14 @@ The current version keeps everything in the browser, groups spending by year, tu
 
 - add an expense with a title, amount and date
 - persist entries in `localStorage`
-- restore dates/numbers safely when the app reloads
+- safely rehydrate dates and numbers after reload
 - switch between years that actually exist in the dataset
-- see total spend, transaction count, average spend and largest expense
+- show total spend, transaction count, average spend and largest expense
 - visualize monthly spending with a lightweight custom chart
 - delete individual entries
-- keep everything local to the current browser
+- export all expenses as a versioned JSON backup
+- import a backup and merge it by stable expense ID
+- keep all data local to the current browser/device
 - stay usable on desktop and mobile
 
 No login. No database. No analytics. No remote sync.
@@ -35,18 +37,19 @@ React state
     │
     ├── yearly summary
     ├── monthly chart
-    └── transaction list
+    ├── transaction list
+    └── backup/export tools
     │
     ▼
-serialize to localStorage
+persistence boundary
     │
-    ▼
-rehydrate on the next visit
+    ├── localStorage
+    └── portable JSON file
 ```
 
-The interesting bit is not CRUD. It is the boundary between **runtime data** and **stored data**.
+The interesting part is not CRUD. It is the boundary between **runtime data** and **stored data**.
 
-Inside the app, dates are real `Date` objects and amounts are numbers. In storage, dates become ISO strings because `localStorage` only stores strings. On startup the app restores those types and ignores malformed records instead of trusting whatever happens to be in browser storage.
+Inside the app, dates are real `Date` objects and amounts are numbers. In storage and backup files, dates are ISO strings. The persistence module restores those types, rejects malformed records, and keeps the UI from depending on the serialized shape.
 
 ## project shape
 
@@ -55,10 +58,13 @@ src/
 ├── App.js
 ├── index.css
 ├── index.js
+├── persistence/
+│   └── expenses.js
 └── components/
     ├── AddExpenseFAB.js
     ├── Chart.js
     ├── ChartBar.js
+    ├── DataTools.js
     ├── ExpenseItem.js
     ├── ExpensesChart.js
     ├── Header.js
@@ -68,9 +74,9 @@ src/
     └── Transactions.js
 ```
 
-`App.js` owns the expense collection, selected year and form visibility. The rest of the components are mostly rendering or small interaction boundaries.
+`App.js` owns the expense collection, selected year and form visibility. `src/persistence/expenses.js` owns validation, serialization, browser storage, import/export parsing and merge behavior. Everything else stays deliberately small and presentation-focused.
 
-That is deliberate. For a project this size, adding a state library or a pretend service layer would mostly create folders.
+For a project this size, that is enough architecture. Redux, a backend and several layers of repositories would mostly be folders looking for a problem.
 
 ## state model
 
@@ -85,7 +91,7 @@ An expense is intentionally tiny:
 }
 ```
 
-Derived values are calculated from the selected year's visible expenses rather than duplicated into state:
+The expense list is the durable source of truth. These are derived every render from the selected year's visible expenses:
 
 ```text
 total
@@ -95,27 +101,58 @@ monthly totals
 transaction count
 ```
 
-That keeps one source of truth: the expense list.
+There is no duplicated `total` state to keep in sync after add/delete/import operations.
 
 ## persistence
 
-The storage key is versioned:
+The browser storage key is versioned:
 
 ```text
 expense-tracker.expenses.v1
 ```
 
-When data is loaded, the app:
+On load, the persistence boundary:
 
-1. parses the JSON
-2. checks that the root value is an array
-3. converts `amount` back to a number
-4. converts `date` back to a `Date`
-5. drops records with missing IDs/titles, invalid dates or non-positive amounts
+1. parses the stored JSON
+2. requires an array
+3. normalizes IDs/titles
+4. converts `amount` to a number
+5. converts `date` to a `Date`
+6. rejects invalid dates, missing IDs/titles and non-positive amounts
 
-When data changes, it serializes dates back to ISO strings and writes the collection to `localStorage`.
+On save, validated expenses are serialized with ISO dates and written to `localStorage`.
 
-If browser storage is unavailable, the UI still works for the current session; persistence simply cannot be guaranteed.
+If browser storage is unavailable, the app still works in memory for that session.
+
+## backups without an account
+
+The backup format is intentionally small and explicit:
+
+```json
+{
+  "app": "expense-tracker",
+  "version": 1,
+  "exportedAt": "2026-09-17T12:00:00.000Z",
+  "expenses": []
+}
+```
+
+Import accepts that format plus the old raw-array shape. It validates the file, rejects backups for a different app or a newer unsupported version, normalizes every expense, then merges records by ID.
+
+```text
+current expenses + imported expenses
+              │
+              ▼
+          Map keyed by id
+              │
+              ▼
+ newest/imported record wins for duplicate id
+              │
+              ▼
+       sort by date descending
+```
+
+The file is read in the browser. Nothing is uploaded anywhere.
 
 ## chart without a chart library
 
@@ -139,15 +176,15 @@ value / max × 100
 CSS bar height
 ```
 
-No charting dependency is needed for twelve bars.
+For twelve bars, a charting dependency would add more weight than value.
 
 ## UI pass
 
-The original project had the usual early-React styling setup: lots of small CSS files, a global `* { width: 100% }` rule, and UI state split between the app and the floating action button.
+The original project had the usual early-React styling setup: lots of tiny CSS files, a global sizing rule, and UI state split between components.
 
-The current pass moves the visual system into a single predictable stylesheet, makes the add button controlled by the parent, gives the empty state an actual action, wires expense deletion through the list, and adds focus/reduced-motion handling.
+The current pass moves the visual system into one predictable stylesheet, keeps the composer state in `App`, gives the empty state an actual action, wires deletion through the list, adds responsive layouts, focus states and reduced-motion handling, and gives import/export its own small local-data panel.
 
-The design is intentionally a little dark, compact and app-like rather than looking like a tutorial dashboard.
+The design is intentionally dark, compact and app-like rather than looking like a tutorial dashboard.
 
 ## run it
 
@@ -164,24 +201,30 @@ Production build:
 npm run build
 ```
 
+Tests:
+
+```bash
+npm test
+```
+
 ## limits
 
 This is still a small local app, not personal-finance software.
 
 - currency is currently displayed as USD
 - there is no edit flow
-- there are no categories or budgets
-- there is no import/export
-- clearing browser storage clears the data
-- data does not sync across browsers/devices
+- there are no categories, budgets or recurring expenses
+- clearing browser storage removes the live copy unless you exported a backup
+- data does not sync automatically across browsers/devices
 - there is no authentication or backend
+- amounts use JavaScript numbers rather than integer minor units
 
-Those are features I would add only if the project stopped being a tiny side quest and became a real product.
+Those are intentional boundaries, not unfinished enterprise features.
 
 ## if i rebuilt it today
 
-I would keep the same local-first feel, but probably use a smaller modern build tool, add an explicit persistence module, support import/export before adding any backend, and make currency/category preferences first-class.
+I would keep the same local-first feel, probably move from Create React App to a smaller modern build tool, make currency/category preferences first-class, and model money in integer minor units if the app became anything more serious.
 
-I would **not** start by adding accounts, cloud sync or a server. For this app, "opens instantly and remembers what I typed" is the product.
+I would **not** start by adding accounts, cloud sync or a server. For this app, "opens instantly, remembers what I typed, and lets me take my data with me" is the product.
 
 More detail: [`docs/engineering.md`](docs/engineering.md)
