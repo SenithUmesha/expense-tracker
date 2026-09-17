@@ -1,10 +1,8 @@
-import NoData from "../assets/images/empty.svg";
-
 const NoTransactions = ({ onAddExpense }) => {
   return (
     <div className="empty-state">
-      <img src={NoData} alt="" aria-hidden="true" />
       <div>
+        <p className="eyebrow">blank slate</p>
         <h3>Nothing logged for this year.</h3>
         <p>Add the first expense and the monthly chart will wake up.</p>
       </div>
