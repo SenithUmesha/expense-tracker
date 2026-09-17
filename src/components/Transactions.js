@@ -1,14 +1,16 @@
 import ExpenseItem from "./ExpenseItem";
 
-const Transactions = (props) => {
+const Transactions = ({ items, onDeleteExpense }) => {
   return (
-    <div>
-      {props.items.map((expense) => (
+    <div className="transaction-list">
+      {items.map((expense) => (
         <ExpenseItem
           key={expense.id}
+          id={expense.id}
           title={expense.title}
           amount={expense.amount}
-          date={expense.date.toDateString()}
+          date={expense.date}
+          onDelete={onDeleteExpense}
         />
       ))}
     </div>
