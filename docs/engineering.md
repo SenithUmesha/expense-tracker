@@ -7,33 +7,33 @@ The app has one durable source of truth — the expense collection — and deriv
 ## 1. Runtime shape
 
 ```text
-                         browser
-                            │
-                            ▼
-                         App.js
-                            │
-          ┌─────────────────┼─────────────────┐
-          │                 │                 │
-          ▼                 ▼                 ▼
-    expense form       yearly summary    transaction list
-          │                 │                 │
-          └─────────────────┼─────────────────┘
-                            │
-                            ▼
-                      React state
-                            │
-                            ▼
-                persistence/expenses.js
-                    │               │
-                    ▼               ▼
-               localStorage      JSON backup
+                           browser
+                              │
+                              ▼
+                           App.js
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+      domain/expenses.js             persistence/expenses.js
+              │                               │
+     pure derived values               serialized boundary
+              │                               │
+   ┌──────────┼──────────┐             ┌──────┴──────┐
+   ▼          ▼          ▼             ▼             ▼
+summary   year filter   chart      localStorage   JSON backup
+   │          │          │
+   └──────────┴──────────┘
+              │
+              ▼
+        presentation UI
 ```
 
 There is no backend, account system, API client or global state library. That is intentional. A project this size benefits more from clear ownership than from additional layers.
 
 ## 2. State ownership
 
-`App.js` owns:
+`App.js` owns only interactive/application state:
 
 ```text
 expenses
@@ -43,15 +43,16 @@ isOpen
 
 `currentYear` comes from the clock and is not stored in React state.
 
-The expense array is the only durable application state. The following values are derived from the selected year's expenses:
+The expense array is the only durable application state. The following values are derived rather than stored:
 
 ```text
+available years
+visible expenses
 total
 average
 largest expense
 transaction count
 monthly chart values
-available years
 ```
 
 There is no separate total/average/chart state to synchronize after add, delete or import operations.
@@ -87,7 +88,47 @@ $42.50 -> 4250 cents
 
 That avoids floating-point ambiguity in accounting operations.
 
-## 4. The persistence boundary
+## 4. Domain derivation boundary
+
+`src/domain/expenses.js` owns calculations that are deterministic functions of the expense collection.
+
+It exposes:
+
+```text
+getAvailableYears
+getExpensesForYear
+summarizeExpenses
+getMonthlyExpenseTotals
+```
+
+This is deliberately not a repository/service/domain-object hierarchy. It is one small pure module because the useful boundary is simply:
+
+```text
+stateful orchestration != derived money math
+```
+
+`App.js` asks the domain module for visible records and summary data. `ExpensesChart` asks it for twelve monthly totals.
+
+That gives the calculations a test seam without introducing Redux, context or another state container.
+
+## 5. Derived summary semantics
+
+For a selected year:
+
+```text
+expenses for year
+      │
+      ├── total   = sum(amount)
+      ├── count   = number of records
+      ├── average = total / count
+      └── largest = max(amount)
+```
+
+An empty year produces zeros rather than `NaN`/`-Infinity` values.
+
+`getExpensesForYear()` returns a new collection sorted newest-first. It does not sort the source array in place, so presentation ordering cannot mutate application state as a side effect.
+
+## 6. The persistence boundary
 
 `src/persistence/expenses.js` owns the serialized representation. `App.js` does not know the storage key or how dates are encoded.
 
@@ -120,11 +161,11 @@ createExportPayload
 parseImportPayload
 ```
 
-That is a useful boundary because local browser storage and imported files are both external input from the application's point of view.
+Browser storage and imported files are both external input from the application's point of view, so they pass through the same normalization rules.
 
-## 5. Normalization
+## 7. Normalization
 
-Every persisted/imported record passes through the same normalization path.
+Every persisted/imported record is checked before the UI receives it.
 
 The module:
 
@@ -136,9 +177,9 @@ The module:
 6. rejects non-finite or non-positive amounts
 7. rejects invalid dates
 
-This prevents the UI from assuming that data in `localStorage` or a selected JSON file is trustworthy just because it looks familiar.
+This keeps malformed browser data from leaking directly into rendering and calculations.
 
-## 6. Versioned browser storage
+## 8. Versioned browser storage
 
 The storage key is:
 
@@ -156,18 +197,13 @@ read v2
   └── missing -> read v1 -> migrate -> write v2
 ```
 
-The current app does not need a migration yet, but the boundary already has somewhere to put one.
+The current model does not need a migration yet, but the persistence layer already has somewhere to put one.
 
-## 7. Storage failure behavior
+## 9. Storage failure behavior
 
 Reads and writes are wrapped so storage failure does not make the UI unusable.
 
-Possible failures include:
-
-- malformed JSON
-- browser/privacy restrictions
-- quota errors
-- unusual embedded/private browsing environments
+Possible failures include malformed JSON, quota errors, privacy restrictions and unusual embedded/private browsing environments.
 
 Fallback behavior:
 
@@ -183,7 +219,7 @@ data may not survive refresh
 
 That trade-off is better than crashing a tiny tracker because persistence is unavailable.
 
-## 8. Portable backups
+## 10. Portable backups
 
 Export creates a small envelope rather than dumping an undocumented array:
 
@@ -196,15 +232,11 @@ Export creates a small envelope rather than dumping an undocumented array:
 }
 ```
 
-The envelope provides three useful things:
+The envelope provides format ownership, compatibility and provenance. The import parser also accepts the earlier raw-array shape for backwards compatibility.
 
-- format ownership (`app`)
-- compatibility (`version`)
-- provenance (`exportedAt`)
+The browser reads import files with `File.text()`. No upload occurs.
 
-The import parser also accepts a legacy raw-array shape for backwards compatibility.
-
-## 9. Import validation
+## 11. Import validation
 
 `parseImportPayload()` rejects files when:
 
@@ -218,9 +250,7 @@ all candidate records are invalid
 
 Partially valid collections are normalized: valid records survive, malformed records are dropped.
 
-The browser reads the file directly with `File.text()`. No upload occurs.
-
-## 10. Merge semantics
+## 12. Merge semantics
 
 Import is a merge, not a blind replace.
 
@@ -243,7 +273,7 @@ Using stable IDs means re-importing the same backup does not endlessly duplicate
 
 The trade-off is that a duplicate ID in an imported file is treated as the same logical expense. There is no conflict UI because this app has no edit/sync model that would justify one.
 
-## 11. Dates and local time
+## 13. Dates and local time
 
 HTML date inputs represent calendar dates while JavaScript `Date` represents timestamps.
 
@@ -253,13 +283,13 @@ The form creates the selected date at local noon:
 new Date(`${enteredDate}T12:00:00`)
 ```
 
-Using noon avoids the common midnight timezone shift when the app later formats the date locally.
+Using noon avoids the common UTC-midnight shift when the app later formats the date locally.
 
 `todayForInput()` similarly compensates for the browser timezone before producing `YYYY-MM-DD`.
 
 If this became a synced multi-timezone product, a date-only domain type would be cleaner than using `Date` as a stand-in.
 
-## 12. Year filtering
+## 14. Year filtering
 
 The year selector is derived from:
 
@@ -271,9 +301,9 @@ all years found in expenses
 
 A `Set` removes duplicates and the result is sorted descending.
 
-Creating an expense switches the selected year to that expense's year. Import switches to the newest year present in the imported records so the newly added data is immediately discoverable.
+Creating an expense switches the selected year to that expense's year. Import switches to the newest year present in the imported records so newly imported data is immediately discoverable.
 
-## 13. Monthly chart
+## 15. Monthly chart
 
 The chart intentionally avoids a charting dependency.
 
@@ -281,10 +311,10 @@ The chart intentionally avoids a charting dependency.
 selected year's expenses
         │
         ▼
-12 month buckets
+getMonthlyExpenseTotals()
         │
         ▼
-sum amounts
+12 month buckets
         │
         ▼
 find max month
@@ -293,9 +323,17 @@ find max month
 bar height = value / max × 100
 ```
 
-For twelve bars, that is enough. The trade-off is that this is not a general analytics/charting system: no axes, tooltips, zoom, rich accessibility table or large-dataset support.
+For twelve bars, that is enough.
 
-## 14. Form validation
+The visual chart now also receives an explicit accessible description generated from the non-zero monthly values, for example:
+
+```text
+Monthly expense chart. Jan $42.50, Mar $18.00.
+```
+
+That does not make it a full accessible data-visualization system, but it means screen-reader users are not asked to infer spending from CSS bar height alone.
+
+## 16. Form validation
 
 The browser provides first-line validation through:
 
@@ -307,11 +345,11 @@ max=<today>
 maxLength="80"
 ```
 
-The submit handler then checks title, amount and date again before creating the record.
+The submit handler checks title, amount and date again before creating the record.
 
-Because there is no server, validation here is about data quality and UX rather than authorization/security.
+Because there is no server, validation here is about data quality and UX rather than authorization.
 
-## 15. Component boundaries
+## 17. Component boundaries
 
 ```text
 App
@@ -326,29 +364,34 @@ App
 ├── DataTools
 └── AddExpenseFAB
 
+domain/
+├── expenses.js
+└── expenses.test.js
+
 persistence/
-└── expenses.js
+├── expenses.js
+└── expenses.test.js
 ```
 
-`App` owns orchestration. Presentation components receive data and emit events. `DataTools` owns browser file interaction, while the persistence module owns the data format and validation rules.
+`App` owns orchestration. Presentation components receive data and emit events. `domain` owns pure derived calculations. `DataTools` owns browser file interaction, while `persistence` owns the stored/backup representation and validation rules.
 
 That separation is enough for the current scale.
 
-## 16. Add/delete/import data flow
+## 18. Add/delete/import data flow
 
 ### add
 
 ```text
 NewExpense
-    │ validated expense fields
+    │ validated fields
     ▼
 App
     │ assign stable id
     ▼
 expenses state
     │
-    ▼
-saveExpenses()
+    ├── domain derivation reruns
+    └── saveExpenses()
 ```
 
 ### delete
@@ -362,8 +405,8 @@ Transactions
     ▼
 App.filter(...)
     │
-    ▼
-saveExpenses()
+    ├── domain derivation reruns
+    └── saveExpenses()
 ```
 
 ### import
@@ -383,13 +426,13 @@ App
    ▼
 expenses state
    │
-   ▼
-saveExpenses()
+   ├── domain derivation reruns
+   └── saveExpenses()
 ```
 
-All three paths converge on the same state/persistence boundary.
+All three mutation paths converge on the same expense collection.
 
-## 17. Accessibility decisions
+## 19. Accessibility decisions
 
 The UI includes several small defaults that matter:
 
@@ -402,10 +445,72 @@ The UI includes several small defaults that matter:
 - reduced-motion handling
 - accessible hidden file input
 - descriptive delete labels
+- a chart-level textual description of non-zero monthly values
 
 This is not a formal accessibility audit, but the interaction model is keyboard-friendly instead of mouse-only tutorial UI.
 
-## 18. Privacy and durability
+## 20. Tests
+
+The tests focus on the two boundaries where regressions would be easy to miss.
+
+### domain tests
+
+`src/domain/expenses.test.js` covers:
+
+```text
+unique/sorted year derivation
+year filtering
+newest-first ordering
+non-mutating sorting
+summary math
+empty summary behavior
+12-month aggregation
+```
+
+### persistence tests
+
+`src/persistence/expenses.test.js` covers:
+
+```text
+normalization
+malformed-record rejection
+localStorage round-trip
+date restoration
+stable-ID merge behavior
+versioned export/import
+foreign-app rejection
+future-version rejection
+```
+
+This is intentionally not snapshot-heavy UI testing. The highest-value rules are pure enough to test directly.
+
+## 21. CI
+
+`.github/workflows/ci.yml` runs on pushes to `main` and pull requests using Node 20.
+
+```text
+npm ci
+  │
+  ▼
+npm run test:ci
+  │
+  ▼
+npm run build
+```
+
+A change therefore has to satisfy both the domain/persistence tests and a production Create React App build.
+
+The workflow uses read-only repository permissions and the npm cache from `actions/setup-node`.
+
+## 22. Repository cleanup
+
+The original app accumulated per-component CSS files and an old empty-state SVG even after the visual system moved into `src/index.css`.
+
+Those dead assets and the unused `TotalAmount` component have been removed. The repository now reflects the code that actually runs instead of carrying a second abandoned styling system beside it.
+
+The remaining Material UI dependency is real: the floating add button still uses its `Fab`, `Zoom` and icon components.
+
+## 23. Privacy and durability
 
 The privacy model is mostly a consequence of not having a backend:
 
@@ -429,7 +534,7 @@ optional portable backup
 
 The user, not a server account, controls transfer between browsers/devices.
 
-## 19. Current limits
+## 24. Current limits
 
 The app intentionally does not solve:
 
@@ -446,7 +551,7 @@ The app intentionally does not solve:
 
 It also stores money as floating-point numbers and still uses Create React App / Material UI v4-era dependencies because the point of the project is the product/data-flow cleanup, not pretending a 2022 practice app started life on today's stack.
 
-## 20. What I would change next
+## 25. What I would change next
 
 If the project grew another step, the useful order would be:
 
@@ -455,7 +560,7 @@ If the project grew another step, the useful order would be:
 2. edit flow
 3. categories
 4. migration-aware persistence v2
-5. focused tests around persistence/import behavior
+5. broader interaction tests only where behavior justifies them
 6. only then consider whether sync/accounts are actually needed
 ```
 
