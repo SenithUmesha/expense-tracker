@@ -8,6 +8,11 @@ import NewExpense from "./components/NewExpense";
 import NoTransactions from "./components/NoTransactions";
 import Transactions from "./components/Transactions";
 import {
+  getAvailableYears,
+  getExpensesForYear,
+  summarizeExpenses,
+} from "./domain/expenses";
+import {
   loadExpenses,
   mergeExpenses,
   saveExpenses,
@@ -31,31 +36,19 @@ const App = () => {
     saveExpenses(expenses);
   }, [expenses]);
 
-  const availableYears = useMemo(() => {
-    const years = new Set([
-      currentYear,
-      ...expenses.map((expense) => expense.date.getFullYear()),
-    ]);
-
-    return [...years].sort((a, b) => b - a);
-  }, [currentYear, expenses]);
+  const availableYears = useMemo(
+    () => getAvailableYears(expenses, currentYear),
+    [currentYear, expenses]
+  );
 
   const visibleExpenses = useMemo(
-    () =>
-      expenses
-        .filter((expense) => expense.date.getFullYear() === selectedYear)
-        .sort((a, b) => b.date - a.date),
+    () => getExpensesForYear(expenses, selectedYear),
     [expenses, selectedYear]
   );
 
-  const total = visibleExpenses.reduce(
-    (sum, expense) => sum + expense.amount,
-    0
-  );
-  const average = visibleExpenses.length ? total / visibleExpenses.length : 0;
-  const largest = visibleExpenses.reduce(
-    (highest, expense) => Math.max(highest, expense.amount),
-    0
+  const summary = useMemo(
+    () => summarizeExpenses(visibleExpenses),
+    [visibleExpenses]
   );
 
   const submitExpenseHandler = (submittedExpense) => {
@@ -90,7 +83,7 @@ const App = () => {
 
   return (
     <main className="app-shell">
-      <Header total={total} count={visibleExpenses.length} year={selectedYear} />
+      <Header total={summary.total} count={summary.count} year={selectedYear} />
 
       <section className="section-block" aria-labelledby="overview-title">
         <div className="section-heading-row">
@@ -117,19 +110,19 @@ const App = () => {
         <div className="summary-grid">
           <article className="summary-card">
             <span>Total</span>
-            <strong>${total.toFixed(2)}</strong>
+            <strong>${summary.total.toFixed(2)}</strong>
           </article>
           <article className="summary-card">
             <span>Transactions</span>
-            <strong>{visibleExpenses.length}</strong>
+            <strong>{summary.count}</strong>
           </article>
           <article className="summary-card">
             <span>Average</span>
-            <strong>${average.toFixed(2)}</strong>
+            <strong>${summary.average.toFixed(2)}</strong>
           </article>
           <article className="summary-card">
             <span>Largest</span>
-            <strong>${largest.toFixed(2)}</strong>
+            <strong>${summary.largest.toFixed(2)}</strong>
           </article>
         </div>
 
@@ -158,11 +151,11 @@ const App = () => {
             <h2 id="transactions-title">Transactions</h2>
           </div>
           <span className="transaction-count">
-            {visibleExpenses.length} {visibleExpenses.length === 1 ? "entry" : "entries"}
+            {summary.count} {summary.count === 1 ? "entry" : "entries"}
           </span>
         </div>
 
-        {visibleExpenses.length > 0 ? (
+        {summary.count > 0 ? (
           <Transactions
             items={visibleExpenses}
             onDeleteExpense={deleteExpenseHandler}
