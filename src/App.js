@@ -1,40 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 
+import AddExpenseFAB from "./components/AddExpenseFAB";
+import DataTools from "./components/DataTools";
+import ExpensesChart from "./components/ExpensesChart";
 import Header from "./components/Header";
 import NewExpense from "./components/NewExpense";
 import NoTransactions from "./components/NoTransactions";
 import Transactions from "./components/Transactions";
-import AddExpenseFAB from "./components/AddExpenseFAB";
-import ExpensesChart from "./components/ExpensesChart";
-
-const STORAGE_KEY = "expense-tracker.expenses.v1";
-
-const loadExpenses = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-
-    if (!Array.isArray(stored)) {
-      return [];
-    }
-
-    return stored
-      .map((expense) => ({
-        ...expense,
-        amount: Number(expense.amount),
-        date: new Date(expense.date),
-      }))
-      .filter(
-        (expense) =>
-          expense.id &&
-          expense.title &&
-          Number.isFinite(expense.amount) &&
-          expense.amount > 0 &&
-          !Number.isNaN(expense.date.getTime())
-      );
-  } catch {
-    return [];
-  }
-};
+import {
+  loadExpenses,
+  mergeExpenses,
+  saveExpenses,
+} from "./persistence/expenses";
 
 const makeId = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -51,19 +28,7 @@ const App = () => {
   const [selectedYear, setSelectedYear] = useState(currentYear);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(
-          expenses.map((expense) => ({
-            ...expense,
-            date: expense.date.toISOString(),
-          }))
-        )
-      );
-    } catch {
-      // The UI still works for the current session if storage is unavailable.
-    }
+    saveExpenses(expenses);
   }, [expenses]);
 
   const availableYears = useMemo(() => {
@@ -108,6 +73,19 @@ const App = () => {
     setExpenses((previousExpenses) =>
       previousExpenses.filter((expense) => expense.id !== expenseId)
     );
+  };
+
+  const importExpensesHandler = (importedExpenses) => {
+    setExpenses((previousExpenses) =>
+      mergeExpenses(previousExpenses, importedExpenses)
+    );
+
+    if (importedExpenses.length > 0) {
+      const newestImportedYear = Math.max(
+        ...importedExpenses.map((expense) => expense.date.getFullYear())
+      );
+      setSelectedYear(newestImportedYear);
+    }
   };
 
   return (
@@ -194,8 +172,10 @@ const App = () => {
         )}
       </section>
 
+      <DataTools expenses={expenses} onImportExpenses={importExpensesHandler} />
+
       <p className="privacy-note">
-        local only · no account · no backend · your data stays in this browser
+        local only · no account · no backend · backups never leave your device
       </p>
 
       <AddExpenseFAB
