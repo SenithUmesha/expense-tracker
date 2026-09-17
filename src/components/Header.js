@@ -1,5 +1,3 @@
-import TotalAmount from "./TotalAmount";
-
 const Header = ({ total, count, year }) => {
   return (
     <header className="hero">
@@ -14,7 +12,7 @@ const Header = ({ total, count, year }) => {
 
       <div className="hero-total-card" aria-label={`${year} spending total`}>
         <span>{year} total</span>
-        <TotalAmount value={total} />
+        <strong className="header-total">${total.toFixed(2)}</strong>
         <small>
           {count} {count === 1 ? "transaction" : "transactions"}
         </small>
