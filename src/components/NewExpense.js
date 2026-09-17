@@ -1,88 +1,89 @@
 import { useState } from "react";
 
-import "../assets/NewExpense.css";
+const todayForInput = () => {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60 * 1000;
+  return new Date(today.getTime() - offset).toISOString().split("T")[0];
+};
 
-const NewExpense = (props) => {
+const NewExpense = ({ onSubmitExpense, onCancel }) => {
   const [enteredTitle, setEnteredTitle] = useState("");
   const [enteredAmount, setEnteredAmount] = useState("");
-  const [enteredDate, setEnteredDate] = useState("");
+  const [enteredDate, setEnteredDate] = useState(todayForInput);
 
-  const titleChangeHandler = (event) => {
-    setEnteredTitle(event.target.value);
-  };
-
-  const amountChangeHandler = (event) => {
-    const { value } = event.target;
-
-    if (value.match(/\./g)) {
-      const [, decimal] = value.split(".");
-
-      if (decimal?.length > 2) {
-        return;
-      }
-    }
-    setEnteredAmount(event.target.value);
-  };
-
-  const dateChangeHandler = (event) => {
-    setEnteredDate(event.target.value);
-  };
-
-  const submitHander = (event) => {
+  const submitHandler = (event) => {
     event.preventDefault();
 
-    const expenseData = {
-      title: enteredTitle,
-      amount: +enteredAmount,
-      date: new Date(enteredDate),
-    };
+    const title = enteredTitle.trim();
+    const amount = Number(enteredAmount);
 
-    props.onSubmitExpense(expenseData);
+    if (!title || !Number.isFinite(amount) || amount <= 0 || !enteredDate) {
+      return;
+    }
+
+    onSubmitExpense({
+      title,
+      amount,
+      // Noon avoids the common UTC-midnight date shift when rendering locally.
+      date: new Date(`${enteredDate}T12:00:00`),
+    });
 
     setEnteredTitle("");
     setEnteredAmount("");
-    setEnteredDate("");
+    setEnteredDate(todayForInput());
   };
 
   return (
-    <form onSubmit={submitHander}>
-      <div>
+    <form className="expense-form" onSubmit={submitHandler}>
+      <label>
+        <span>What was it?</span>
         <input
-          onChange={titleChangeHandler}
-          className="new-expense__control"
+          onChange={(event) => setEnteredTitle(event.target.value)}
           type="text"
-          placeholder="Title"
+          placeholder="Coffee, groceries, train…"
           value={enteredTitle}
+          maxLength="80"
+          autoFocus
           required
         />
-      </div>
-      <div>
+      </label>
+
+      <label>
+        <span>Amount</span>
+        <div className="amount-input">
+          <span aria-hidden="true">$</span>
+          <input
+            onChange={(event) => setEnteredAmount(event.target.value)}
+            type="number"
+            inputMode="decimal"
+            placeholder="0.00"
+            min="0.01"
+            step="0.01"
+            value={enteredAmount}
+            required
+          />
+        </div>
+      </label>
+
+      <label>
+        <span>Date</span>
         <input
-          onChange={amountChangeHandler}
-          className="new-expense__control"
-          type="number"
-          placeholder="Amount"
-          min="0.01"
-          step="0.01"
-          value={enteredAmount}
-          required
-        />
-      </div>
-      <div>
-        <input
-          onChange={dateChangeHandler}
-          className="new-expense__control"
+          onChange={(event) => setEnteredDate(event.target.value)}
           type="date"
-          placeholder="Date"
-          min="2022-01-01"
-          max="2022-12-31"
+          max={todayForInput()}
           value={enteredDate}
           required
         />
+      </label>
+
+      <div className="form-actions">
+        <button className="button button-secondary" type="button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="button button-primary" type="submit">
+          Add expense
+        </button>
       </div>
-      <button className="new-expense__actions" type="submit">
-        Add Expense
-      </button>
     </form>
   );
 };
