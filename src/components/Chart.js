@@ -1,19 +1,16 @@
 import ChartBar from "./ChartBar";
 
-import "../assets/Chart.css";
-
-const Chart = (props) => {
-  const dataPointValues = props.dataPoints.map((dataPoint) => dataPoint.value);
-  const maxValue = Math.max(...dataPointValues);
+const Chart = ({ dataPoints }) => {
+  const maxValue = Math.max(0, ...dataPoints.map((dataPoint) => dataPoint.value));
 
   return (
-    <div className="chart">
-      {props.dataPoints.map((dataPoint) => (
+    <div className="chart" aria-label="Monthly expense chart">
+      {dataPoints.map((dataPoint) => (
         <ChartBar
-          key={dataPoint.month}
+          key={dataPoint.label}
           value={dataPoint.value}
           maxValue={maxValue}
-          lable={dataPoint.month}
+          label={dataPoint.label}
         />
       ))}
     </div>
