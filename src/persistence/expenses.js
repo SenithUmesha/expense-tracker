@@ -55,6 +55,18 @@ export const saveExpenses = (expenses) => {
   }
 };
 
+export const mergeExpenses = (currentExpenses, importedExpenses) => {
+  const byId = new Map(
+    normalizeExpenses(currentExpenses).map((expense) => [expense.id, expense])
+  );
+
+  normalizeExpenses(importedExpenses).forEach((expense) => {
+    byId.set(expense.id, expense);
+  });
+
+  return [...byId.values()].sort((a, b) => b.date - a.date);
+};
+
 export const createExportPayload = (expenses) => ({
   app: "expense-tracker",
   version: EXPORT_VERSION,
@@ -67,12 +79,24 @@ export const createExportPayload = (expenses) => ({
 
 export const parseImportPayload = (rawText) => {
   const parsed = JSON.parse(rawText);
+
+  if (!Array.isArray(parsed)) {
+    if (parsed?.app && parsed.app !== "expense-tracker") {
+      throw new Error("That backup belongs to a different app.");
+    }
+
+    if (Number(parsed?.version) > EXPORT_VERSION) {
+      throw new Error("That backup was created by a newer Expense Tracker version.");
+    }
+  }
+
   const candidate = Array.isArray(parsed) ? parsed : parsed?.expenses;
-  const expenses = normalizeExpenses(candidate);
 
   if (!Array.isArray(candidate)) {
     throw new Error("The selected file does not contain an expense collection.");
   }
+
+  const expenses = normalizeExpenses(candidate);
 
   if (candidate.length > 0 && expenses.length === 0) {
     throw new Error("No valid expenses were found in the selected file.");
