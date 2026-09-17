@@ -1,18 +1,15 @@
-import "../assets/ChartBar.css";
-
-const ChartBar = (props) => {
-  let fillHeight = "0%";
-
-  if (props.maxValue > 0) {
-    fillHeight = Math.round((props.value / props.maxValue) * 100) + "%";
-  }
+const ChartBar = ({ value, maxValue, label }) => {
+  const fillHeight = maxValue > 0 ? Math.round((value / maxValue) * 100) : 0;
 
   return (
-    <div className="chart-bar">
-      <div className="chart-bar-inner">
-        <div className="chart-bar-fill" style={{ height: fillHeight }}></div>
+    <div className="chart-bar" title={`${label}: $${value.toFixed(2)}`}>
+      <div className="chart-bar-track" aria-hidden="true">
+        <div
+          className="chart-bar-fill"
+          style={{ height: `${fillHeight}%` }}
+        />
       </div>
-      <h2 className="chart-bar-lable">{props.lable}</h2>
+      <span>{label}</span>
     </div>
   );
 };
