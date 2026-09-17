@@ -51,15 +51,19 @@ const App = () => {
   const [selectedYear, setSelectedYear] = useState(currentYear);
 
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(
-        expenses.map((expense) => ({
-          ...expense,
-          date: expense.date.toISOString(),
-        }))
-      )
-    );
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(
+          expenses.map((expense) => ({
+            ...expense,
+            date: expense.date.toISOString(),
+          }))
+        )
+      );
+    } catch {
+      // The UI still works for the current session if storage is unavailable.
+    }
   }, [expenses]);
 
   const availableYears = useMemo(() => {
@@ -84,6 +88,10 @@ const App = () => {
     0
   );
   const average = visibleExpenses.length ? total / visibleExpenses.length : 0;
+  const largest = visibleExpenses.reduce(
+    (highest, expense) => Math.max(highest, expense.amount),
+    0
+  );
 
   const submitExpenseHandler = (submittedExpense) => {
     const expense = {
@@ -141,6 +149,10 @@ const App = () => {
             <span>Average</span>
             <strong>${average.toFixed(2)}</strong>
           </article>
+          <article className="summary-card">
+            <span>Largest</span>
+            <strong>${largest.toFixed(2)}</strong>
+          </article>
         </div>
 
         <ExpensesChart expenses={visibleExpenses} />
@@ -182,7 +194,14 @@ const App = () => {
         )}
       </section>
 
-      <AddExpenseFAB isOpen={isOpen} onClickFAB={() => setIsOpen((open) => !open)} />
+      <p className="privacy-note">
+        local only · no account · no backend · your data stays in this browser
+      </p>
+
+      <AddExpenseFAB
+        isOpen={isOpen}
+        onClickFAB={() => setIsOpen((open) => !open)}
+      />
     </main>
   );
 };
