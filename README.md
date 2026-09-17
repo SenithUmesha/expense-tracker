@@ -33,21 +33,24 @@ new expense
 validate form
     │
     ▼
-React state
-    │
-    ├── yearly summary
-    ├── monthly chart
-    ├── transaction list
-    └── backup/export tools
-    │
-    ▼
-persistence boundary
-    │
-    ├── localStorage
-    └── portable JSON file
+React state ───────────────┐
+    │                      │
+    ▼                      ▼
+domain derivation     persistence boundary
+    │                      │
+    ├── years               ├── localStorage
+    ├── summary             └── portable JSON
+    ├── monthly totals
+    └── visible entries
 ```
 
-The interesting part is not CRUD. It is the boundary between **runtime data** and **stored data**.
+The interesting part is not CRUD. It is keeping three different concerns separate without making a tiny app look like enterprise software:
+
+```text
+UI state          -> React components
+business math     -> domain/expenses.js
+serialized data   -> persistence/expenses.js
+```
 
 Inside the app, dates are real `Date` objects and amounts are numbers. In storage and backup files, dates are ISO strings. The persistence module restores those types, rejects malformed records, and keeps the UI from depending on the serialized shape.
 
@@ -58,8 +61,12 @@ src/
 ├── App.js
 ├── index.css
 ├── index.js
+├── domain/
+│   ├── expenses.js
+│   └── expenses.test.js
 ├── persistence/
-│   └── expenses.js
+│   ├── expenses.js
+│   └── expenses.test.js
 └── components/
     ├── AddExpenseFAB.js
     ├── Chart.js
@@ -70,15 +77,14 @@ src/
     ├── Header.js
     ├── NewExpense.js
     ├── NoTransactions.js
-    ├── TotalAmount.js
     └── Transactions.js
 ```
 
-`App.js` owns the expense collection, selected year and form visibility. `src/persistence/expenses.js` owns validation, serialization, browser storage, import/export parsing and merge behavior. Everything else stays deliberately small and presentation-focused.
+`App.js` owns the expense collection, selected year and form visibility. `src/domain/expenses.js` owns pure derived calculations. `src/persistence/expenses.js` owns validation, serialization, browser storage, import/export parsing and merge behavior.
 
 For a project this size, that is enough architecture. Redux, a backend and several layers of repositories would mostly be folders looking for a problem.
 
-## state model
+## one source of truth
 
 An expense is intentionally tiny:
 
@@ -91,17 +97,20 @@ An expense is intentionally tiny:
 }
 ```
 
-The expense list is the durable source of truth. These are derived every render from the selected year's visible expenses:
+The expense list is the durable source of truth. Everything else is derived:
 
 ```text
-total
-average
-largest expense
-monthly totals
-transaction count
+expenses
+   │
+   ├── getAvailableYears()
+   ├── getExpensesForYear()
+   ├── summarizeExpenses()
+   └── getMonthlyExpenseTotals()
 ```
 
-There is no duplicated `total` state to keep in sync after add/delete/import operations.
+That means add, delete and import operations only mutate one collection. Totals, averages, charts and counts cannot drift out of sync because none of them are stored separately.
+
+The derivation helpers are pure functions and have focused tests, which is more useful here than introducing a state-management library.
 
 ## persistence
 
@@ -146,7 +155,7 @@ current expenses + imported expenses
           Map keyed by id
               │
               ▼
- newest/imported record wins for duplicate id
+ imported record wins for duplicate id
               │
               ▼
        sort by date descending
@@ -158,7 +167,7 @@ The file is read in the browser. Nothing is uploaded anywhere.
 
 The monthly chart is intentionally boring in a good way.
 
-`ExpensesChart` reduces the selected year's entries into twelve month buckets, `Chart` finds the largest bucket, and each `ChartBar` renders its height as a percentage of that maximum.
+The domain layer reduces the selected year's entries into twelve month buckets, `Chart` finds the largest bucket, and each `ChartBar` renders its height as a percentage of that maximum.
 
 ```text
 expenses
@@ -176,15 +185,37 @@ value / max × 100
 CSS bar height
 ```
 
-For twelve bars, a charting dependency would add more weight than value.
+For twelve bars, a charting dependency would add more weight than value. The chart also exposes a generated accessible description containing the non-zero monthly values rather than relying only on visual bar height.
 
 ## UI pass
 
-The original project had the usual early-React styling setup: lots of tiny CSS files, a global sizing rule, and UI state split between components.
+The original project had the usual early-React styling setup: lots of tiny component CSS files, a global sizing rule, and UI state split between components.
 
-The current pass moves the visual system into one predictable stylesheet, keeps the composer state in `App`, gives the empty state an actual action, wires deletion through the list, adds responsive layouts, focus states and reduced-motion handling, and gives import/export its own small local-data panel.
+The current pass moves the visual system into one predictable stylesheet, removes the now-unused legacy CSS/image files, keeps the composer state in `App`, gives the empty state an actual action, wires deletion through the list, adds responsive layouts, focus states and reduced-motion handling, and gives import/export its own small local-data panel.
 
 The design is intentionally dark, compact and app-like rather than looking like a tutorial dashboard.
+
+## testing + CI
+
+There are two focused test seams:
+
+```text
+src/domain/expenses.test.js
+    -> years, filtering, sorting, summaries, monthly totals
+
+src/persistence/expenses.test.js
+    -> normalization, storage round trips, merging, backup compatibility
+```
+
+GitHub Actions runs the same basic checks on pushes and pull requests:
+
+```text
+npm ci
+npm run test:ci
+npm run build
+```
+
+The goal is not a giant test suite. It is protecting the two places where a small app can quietly become wrong: **derived money data** and **serialized user data**.
 
 ## run it
 
@@ -201,10 +232,16 @@ Production build:
 npm run build
 ```
 
-Tests:
+Interactive tests:
 
 ```bash
 npm test
+```
+
+One-shot test run:
+
+```bash
+npm run test:ci
 ```
 
 ## limits
